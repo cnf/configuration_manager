@@ -65,10 +65,6 @@ void ConfigManager::Loop() {
       ps_unref_msg(msg);
       continue;
 
-    } else if (ps_has_topic_suffix(msg, TOPIC_DOT TOPIC_LIST)) {
-      // TODO: listing namespaces is not implemented (ParseTopic never yields kVerbList; nothing was ever sent).
-      ps_unref_msg(msg);
-      continue;
     } else if (ps_has_topic_suffix(msg, TOPIC_DOT TOPIC_GET)) {
       if (!PS_IS_PTR(msg) && parts.module == kConfigSystemNamespace && parts.name.empty()) {
         ps_unref_msg(msg); // config.system.get is the application's (its description), not ours
@@ -132,6 +128,7 @@ void ConfigManager::Loop() {
         parts.TopicGet(topic);
         FLOG_DEBUG("Informing %s about the config change", topic);
         PS_PUB_NIL(topic);
+        SendPref(parts.module, parts.name); // like set: a controller sees the new list
         break;
       }
       default:
@@ -146,6 +143,7 @@ void ConfigManager::Loop() {
         parts.TopicGet(topic);
         FLOG_DEBUG("Informing %s about the config change", topic);
         PS_PUB_NIL(topic);
+        SendPref(parts.module, parts.name); // like set: a controller sees the new list
         break;
       }
       default:

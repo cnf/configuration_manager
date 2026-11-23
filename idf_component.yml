@@ -1,5 +1,5 @@
 ## IDF Component Manager Manifest File
-version: "0.1.1"
+version: "0.1.2"
 description: Typed, described settings in NVS, optionally served on the pubsub-c bus
 url: https://github.com/cnf/configuration_manager
 license: Apache-2.0

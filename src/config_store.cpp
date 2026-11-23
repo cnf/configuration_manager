@@ -328,7 +328,31 @@ size_t ConfigStore::AddToSetting(const char *name_space, const char *name, const
 
 size_t ConfigStore::RemoveFromSetting(const char *name_space, const char *name, const std::string &value) {
   std::lock_guard<std::recursive_mutex> lock(s_mutex);
-  return size_t();
+  const ConfigEntries entry = _entries[name_space];
+  auto it = std::find_if(entry.begin(), entry.end(), [name](const ConfigEntry &e) { return strcmp(e.key, name) == 0; });
+  if (it == entry.end()) {
+    FLOG_DEBUG("Not Found %s.%s", name_space, name);
+    return 0;
+  }
+  if (!std::holds_alternative<ConfigVector>(it->default_value)) {
+    FLOG_DEBUG("Wrong Type: %s", ConfigValueTypeToString(it->type));
+    return 0;
+  }
+  _prefs.begin(name_space);
+  std::vector<std::string> vec;
+  std::string current_value = _prefs.getString(name, "");
+  DeSerialize(&current_value, vec);
+  auto found = std::find(vec.begin(), vec.end(), value);
+  if (found == vec.end()) {
+    FLOG_ERROR("Value %s not in %s.%s, nothing to remove", value.c_str(), name_space, name);
+    _prefs.end();
+    return 0; // nothing changed, so return 0
+  }
+  vec.erase(found); // AddToSetting keeps entries unique, so there is at most one
+  Serialize(vec, current_value);
+  size_t size = _prefs.putString(name, current_value);
+  _prefs.end();
+  return size;
 }
 
 ConfigEntry ConfigStore::GetSetting(std::string name_space, std::string key) {

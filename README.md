@@ -47,7 +47,7 @@ See `config_topics.hpp`. In short:
 | `config.<ns>.get`                              | PTR `shared_ptr<SettingsMap>*` | fill in (what `GetSettings` sends)       |
 | `[inc.]config[.<ns>[.<key>]].get`              | anything else               | publish the values as `report.config`       |
 | `[inc.]config.<ns>.<key>.set`                  | INT / DBL / BOOL / STR      | write; then `<ns>.config.get` (NIL) + report |
-| `[inc.]config.<ns>.<key>.add` / `.remove`      | STR                         | add to / remove from a list value           |
+| `[inc.]config.<ns>.<key>.add` / `.remove`      | STR                         | add to / remove from a list; then as set    |
 | `[inc.]config.<ns>.<key>.reset`                | any                         | delete the key (default on next register)   |
 | `inc.config.format`                            | BOOL true                   | erase NVS, publish `reset`                  |
 
@@ -64,8 +64,7 @@ See `config_topics.hpp`. In short:
 
 ## Known gaps
 
-- `config...list` (listing namespaces) is not implemented.
-- `RemoveFromSetting` is a stub.
+- No `config.list`: send `config.get` and group the `report.config` replies by `module_name`.
 
 ## License
 
