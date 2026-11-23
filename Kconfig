@@ -1,0 +1,10 @@
+menu "Configuration manager"
+
+    config CONFIG_MANAGER_PUBSUB
+        bool "Serve the configuration on the pubsub-c bus"
+        default y
+        help
+            Build ConfigManager (config_mgr.hpp): a task that answers the config.* topics, plus RegisterConfig()
+            and GetSettings(). Without it only ConfigStore (config_store.hpp) is built, used by direct calls.
+
+endmenu

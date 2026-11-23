@@ -1,0 +1,14 @@
+## IDF Component Manager Manifest File
+version: "0.1.0"
+description: Typed, described settings in NVS, optionally served on the pubsub-c bus
+url: https://github.com/cnf/configuration_manager
+license: Apache-2.0
+dependencies:
+  idf:
+    version: '>=5.5.0'
+  FunLog:
+    git: https://github.com/cnf/FunLog.git
+    version: main
+  pubsub-c:
+    git: https://github.com/FunShoot/pubsub-c
+    version: '*'
