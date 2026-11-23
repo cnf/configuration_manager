@@ -43,7 +43,7 @@ void ConfigStore::Setup() {
     FLOG_DEBUG("NVS opened successfully");
     break;
   default:
-    FLOG_ERROR("NVS open failed with error:", esp_err_to_name(err));
+    FLOG_ERROR("NVS open failed with error: %s", esp_err_to_name(err));
   }
 
   if (!_prefs.begin(kConfigManagerNamespace)) {
@@ -263,7 +263,7 @@ size_t ConfigStore::WriteSetting(const char *name_space, const char *name, bool 
   size_t size = _prefs.putBool(name, value);
   bool test = _prefs.getBool(name);
   if (test != value) {
-    FLOG_DEBUG("Failed to set bool", name);
+    FLOG_DEBUG("Failed to set bool %s", name);
   }
   _prefs.end();
   return size;
