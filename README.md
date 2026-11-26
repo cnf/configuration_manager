@@ -35,7 +35,14 @@ Without the bus: create a `ConfigStore`, call `Setup()`, then `RegisterSettings(
 
 Keys are NVS keys: at most 15 characters. Formats (`int:range=[a,b]`, `string:len=[,n]`, `enum=[...]`, ...) follow
 [configformat.md](https://github.com/FunShoot/protocol/blob/develop/configformat.md); `ConfigStore::ParseValidator()`
-parses them.
+parses them, and every write (`WriteSetting`, `AddToSetting`, `RemoveFromSetting`) is checked against the entry's
+format: a value that breaks a rule is not written (logged, returns 0). After a `.set` / `.add` / `.remove` the stored
+value is reported either way, so a controller sees whether its change took.
+
+List settings use the `list` type (not yet in configformat.md): `len` and `enum` apply to each item, as for `string`,
+and `count=[min,max]` limits the number of items (`.add` refused when full, `.remove` when at the minimum). Items are
+stored joined with `.`, the bus delimiter, so an item can be neither empty nor contain a `.`. Example:
+`list:len=[1,15];count=[,8]`.
 
 ## Topics (pubsub front-end)
 

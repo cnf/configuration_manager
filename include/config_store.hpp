@@ -123,8 +123,8 @@ struct ConfigEntry {
     type = ConfigValueTypes::kVector;
     default_value = default_val;
     unit = iunit;
-    if (!format.starts_with("list") && !format.starts_with("vector")) {
-      FLOG_WARN("ConfigEntry %s has vector type but format does not start with 'list' or 'vector'", key);
+    if (!format.starts_with("list")) {
+      FLOG_WARN("ConfigEntry %s has list type but format does not start with 'list'", key);
     }
   }
   ConfigEntry() {
@@ -146,6 +146,10 @@ struct Validator {
   double min_val = 0.0, max_val = 0.0;
   bool has_len = false;
   size_t min_len = 0, max_len = 0;
+  // list: len / enum apply to each item; count limits the number of items
+  bool is_list = false;
+  bool has_count = false;
+  size_t min_count = 0, max_count = 0;
   // enum
   bool has_enum = false;
   std::vector<std::string> enum_vals; ///< string enum values
@@ -186,6 +190,21 @@ struct Validator {
   }
 
   bool validate_bool(bool) const { return true; }
+
+  /// @brief One list item: the string rules, plus what the stored form needs (items are joined with '.', the bus
+  /// delimiter, so an item can be neither empty nor contain one).
+  bool validate_item(const std::string &v) const {
+    if (v.empty() || v.find('.') != std::string::npos)
+      return false;
+    return validate_string(v);
+  }
+
+  /// @brief A whole list: every item, and the number of items.
+  bool validate_list(const std::vector<std::string> &items) const {
+    if (has_count && (items.size() < min_count || items.size() > max_count))
+      return false;
+    return std::all_of(items.begin(), items.end(), [this](const std::string &item) { return validate_item(item); });
+  }
 };
 
 using ConfigEntries = std::vector<ConfigEntry>;
@@ -233,6 +252,8 @@ private:
   bool ReadNamespaces();
   bool WriteNamespaces();
   ConfigValue ReadValue(const ConfigEntry &entry);
+  /// @brief The rules of a registered entry's format (no rules when the entry is unknown).
+  Validator ValidatorFor(const char *name_space, const char *name);
 };
 
 size_t Serialize(const std::vector<std::string> &vector, std::string &serialized);

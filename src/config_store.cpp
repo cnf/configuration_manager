@@ -20,7 +20,7 @@ std::recursive_mutex s_mutex;  // guards _prefs and the store's maps; public met
 // Placeholder entries for the "system" namespace (always registered).
 ConfigEntries system_entries = {
     ConfigEntry("test", "Test entry", "bool", false, ""),
-    ConfigEntry("test_vector", "Testing Vectors", "aliasa.aliasb", ConfigVector(), ""),
+    ConfigEntry("test_vector", "Testing Vectors", "list:len=[1,15];count=[,8]", ConfigVector(), ""),
 };
 } // namespace
 
@@ -239,22 +239,34 @@ size_t ConfigStore::DeleteSetting(const char *name_space, const char *name) {
   return 0; // TODO: check if delete was successful
 }
 
+Validator ConfigStore::ValidatorFor(const char *name_space, const char *name) {
+  std::lock_guard<std::recursive_mutex> lock(s_mutex);
+  const ConfigEntry entry = GetSetting(name_space, name);
+  return entry.key[0] == '\0' ? Validator{} : ParseValidator(entry.format);
+}
+
 size_t ConfigStore::WriteSetting(const char *name_space, const char *name, int value) {
   std::lock_guard<std::recursive_mutex> lock(s_mutex);
+  if (!ValidatorFor(name_space, name).validate_int(value)) {
+    FLOG_ERROR("%d not allowed for %s.%s, not written", value, name_space, name);
+    return 0;
+  }
   _prefs.begin(name_space);
   size_t size = _prefs.putInt(name, value);
   _prefs.end();
   return size;
-  // return 0;
 }
 
 size_t ConfigStore::WriteSetting(const char *name_space, const char *name, double value) {
   std::lock_guard<std::recursive_mutex> lock(s_mutex);
+  if (!ValidatorFor(name_space, name).validate_double(value)) {
+    FLOG_ERROR("%f not allowed for %s.%s, not written", value, name_space, name);
+    return 0;
+  }
   _prefs.begin(name_space);
   size_t size = _prefs.putDouble(name, value);
   _prefs.end();
   return size;
-  // return 0;
 }
 
 size_t ConfigStore::WriteSetting(const char *name_space, const char *name, bool value) {
@@ -267,19 +279,18 @@ size_t ConfigStore::WriteSetting(const char *name_space, const char *name, bool 
   }
   _prefs.end();
   return size;
-  // return 0;
 }
 
 size_t ConfigStore::WriteSetting(const char *name_space, const char *name, const char *value) {
-  std::lock_guard<std::recursive_mutex> lock(s_mutex);
-  _prefs.begin(name_space);
-  size_t size = _prefs.putString(name, value);
-  _prefs.end();
-  return size;
+  return WriteSetting(name_space, name, std::string(value));
 }
 
 size_t ConfigStore::WriteSetting(const char *name_space, const char *name, const std::string &value) {
   std::lock_guard<std::recursive_mutex> lock(s_mutex);
+  if (!ValidatorFor(name_space, name).validate_string(value)) {
+    FLOG_ERROR("'%s' not allowed for %s.%s, not written", value.c_str(), name_space, name);
+    return 0;
+  }
   _prefs.begin(name_space);
   size_t size = _prefs.putString(name, value);
   _prefs.end();
@@ -288,13 +299,16 @@ size_t ConfigStore::WriteSetting(const char *name_space, const char *name, const
 
 size_t ConfigStore::WriteSetting(const char *name_space, const char *name, const ConfigVector &value) {
   std::lock_guard<std::recursive_mutex> lock(s_mutex);
-  FLOG_DEBUG("Writing vector for %s in namespace %s", name, name_space);
+  if (!ValidatorFor(name_space, name).validate_list(value)) {
+    FLOG_ERROR("List not allowed for %s.%s, not written", name_space, name);
+    return 0;
+  }
   std::string serial_data;
-  Serialize(value, serial_data); // FIXME: check if serialization worked.
+  Serialize(value, serial_data);
   _prefs.begin(name_space);
   size_t size = _prefs.putString(name, serial_data);
   _prefs.end();
-  return size_t();
+  return size;
 }
 
 size_t ConfigStore::AddToSetting(const char *name_space, const char *name, const std::string &value) {
@@ -309,17 +323,26 @@ size_t ConfigStore::AddToSetting(const char *name_space, const char *name, const
     FLOG_DEBUG("Wrong Type: %s", ConfigValueTypeToString(it->type));
     return 0;
   }
+  const Validator rules = ParseValidator(it->format);
+  if (!rules.validate_item(value)) {
+    FLOG_ERROR("'%s' not allowed in %s.%s, not added", value.c_str(), name_space, name);
+    return 0;
+  }
   _prefs.begin(name_space);
   std::vector<std::string> vec;
   std::string current_value = _prefs.getString(name, "");
   DeSerialize(&current_value, vec);
-  if (std::find(vec.begin(), vec.end(), value) == vec.end()) { // only add if the value is not already in the list
-    vec.push_back(value);
-  } else {
+  if (std::find(vec.begin(), vec.end(), value) != vec.end()) {
     FLOG_ERROR("Value %s already exists in %s.%s, not adding again", value.c_str(), name_space, name);
     _prefs.end();
     return 0; // nothing changed, so return 0
   }
+  if (rules.has_count && vec.size() >= rules.max_count) {
+    FLOG_ERROR("%s.%s is full (%u items), %s not added", name_space, name, (unsigned)vec.size(), value.c_str());
+    _prefs.end();
+    return 0;
+  }
+  vec.push_back(value);
   Serialize(vec, current_value);
   size_t size = _prefs.putString(name, current_value);
   _prefs.end();
@@ -347,6 +370,12 @@ size_t ConfigStore::RemoveFromSetting(const char *name_space, const char *name, 
     FLOG_ERROR("Value %s not in %s.%s, nothing to remove", value.c_str(), name_space, name);
     _prefs.end();
     return 0; // nothing changed, so return 0
+  }
+  if (const Validator rules = ParseValidator(it->format); rules.has_count && vec.size() <= rules.min_count) {
+    FLOG_ERROR("%s.%s needs at least %u items, %s not removed", name_space, name, (unsigned)rules.min_count,
+               value.c_str());
+    _prefs.end();
+    return 0;
   }
   vec.erase(found); // AddToSetting keeps entries unique, so there is at most one
   Serialize(vec, current_value);
@@ -728,8 +757,11 @@ Validator ConfigStore::ParseValidator(const std::string &format) {
   const bool is_string = type == "string";
   const bool is_bool = type == "bool";
   const bool is_nil = type == "nil";
-  if (!(is_int || is_double || is_string || is_bool || is_nil))
+  const bool is_list = type == "list"; // a list of strings: string rules apply per item
+  if (!(is_int || is_double || is_string || is_bool || is_nil || is_list))
     return {};
+  v.is_list = is_list;
+  const bool is_text = is_string || is_list;
 
   if (rules.empty() || is_bool || is_nil)
     return v;
@@ -737,7 +769,7 @@ Validator ConfigStore::ParseValidator(const std::string &format) {
   for (const auto &rule : SplitSemi(rules)) {
     // flag form: bare "password" (no '=')
     if (rule == "password") {
-      v.password = true;
+      v.password = is_string;
       continue;
     }
 
@@ -757,13 +789,22 @@ Validator ConfigStore::ParseValidator(const std::string &format) {
           v.max_val = hi;
       }
 
-    } else if (is_string && key == "len") {
+    } else if (is_text && key == "len") {
       bool has_lo = false, has_hi = false;
       double lo = 0.0, hi = 0.0;
       if (ParseBracketRange(val, &has_lo, &lo, &has_hi, &hi)) {
         v.has_len = true;
         v.min_len = has_lo ? static_cast<size_t>(lo) : 0; // [,N] => [0,N]
-        v.max_len = has_hi ? static_cast<size_t>(hi) : 0;
+        v.max_len = has_hi ? static_cast<size_t>(hi) : SIZE_MAX; // [N,] => no upper bound
+      }
+
+    } else if (is_list && key == "count") {
+      bool has_lo = false, has_hi = false;
+      double lo = 0.0, hi = 0.0;
+      if (ParseBracketRange(val, &has_lo, &lo, &has_hi, &hi)) {
+        v.has_count = true;
+        v.min_count = has_lo ? static_cast<size_t>(lo) : 0;
+        v.max_count = has_hi ? static_cast<size_t>(hi) : SIZE_MAX;
       }
 
     } else if ((is_int || is_double) && key == "enum") {
@@ -773,7 +814,7 @@ Validator ConfigStore::ParseValidator(const std::string &format) {
         v.enum_num_vals = std::move(tmp);
       }
 
-    } else if (is_string && key == "enum") {
+    } else if (is_text && key == "enum") {
       std::vector<std::string> tmp;
       if (ParseEnumStringList(val, &tmp)) {
         v.has_enum = true;
