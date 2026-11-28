@@ -14,10 +14,12 @@
 
 #include "funlog.h"
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -138,7 +140,35 @@ struct ConfigEntry {
   // TODO: Bytes not implemented yet in config manager
 };
 
+/// @brief lower_snake_case: spaces and '-' become '_', and a lower-to-upper step gets a '_' ("Fast Heat",
+/// "FastHeat", "fast-heat" -> "fast_heat"). Used to match string enum values loosely.
+inline std::string NormalizeString(const std::string &str) {
+  std::string result;
+  result.reserve(str.length());
+  bool prev_lower = false;
+  for (unsigned char c : str) {
+    if (c == ' ' || c == '-') {
+      result += '_';
+      prev_lower = false;
+    } else if (std::isupper(c)) {
+      if (prev_lower) {
+        result += '_';
+      }
+      result += static_cast<char>(std::tolower(c));
+      prev_lower = false;
+    } else {
+      result += static_cast<char>(std::tolower(c));
+      prev_lower = true;
+    }
+  }
+  return result;
+}
+
 /// @brief Validator for configuration values parsed from format string.
+///
+/// The one place a value is checked and normalized: the store writes only what normalize_* returns, and a UI that
+/// calls the same functions on the same format cannot disagree with the device. Get one with
+/// ConfigStore::ParseValidator(format) (static, no store or NVS needed).
 /// @link https://github.com/FunShoot/protocol/blob/develop/configformat.md
 struct Validator {
   // range / len
@@ -181,30 +211,53 @@ struct Validator {
     return true;
   }
 
-  bool validate_string(const std::string &v) const {
-    if (has_len && (v.size() < min_len || v.size() > max_len))
-      return false;
-    if (has_enum && std::find(enum_vals.begin(), enum_vals.end(), v) == enum_vals.end())
-      return false;
-    return true;
+  /// @brief The string to store for `v`, or nothing when `v` is not allowed. With an enum, `v` matches an option
+  /// exactly or after NormalizeString on both, and the result is the option as written in the format.
+  std::optional<std::string> normalize_string(const std::string &v) const {
+    std::string result = v;
+    if (has_enum && std::find(enum_vals.begin(), enum_vals.end(), v) == enum_vals.end()) {
+      const std::string wanted = NormalizeString(v);
+      auto it = std::find_if(enum_vals.begin(), enum_vals.end(),
+                             [&wanted](const std::string &option) { return NormalizeString(option) == wanted; });
+      if (it == enum_vals.end())
+        return std::nullopt;
+      result = *it;
+    }
+    if (has_len && (result.size() < min_len || result.size() > max_len))
+      return std::nullopt;
+    return result;
   }
+
+  /// @brief `v` is allowed (possibly after normalizing; store normalize_string(v), not `v`).
+  bool validate_string(const std::string &v) const { return normalize_string(v).has_value(); }
 
   bool validate_bool(bool) const { return true; }
 
   /// @brief One list item: the string rules, plus what the stored form needs (items are joined with '.', the bus
   /// delimiter, so an item can be neither empty nor contain one).
-  bool validate_item(const std::string &v) const {
-    if (v.empty() || v.find('.') != std::string::npos)
-      return false;
-    return validate_string(v);
+  std::optional<std::string> normalize_item(const std::string &v) const {
+    std::optional<std::string> result = normalize_string(v);
+    if (!result || result->empty() || result->find('.') != std::string::npos)
+      return std::nullopt;
+    return result;
   }
+  bool validate_item(const std::string &v) const { return normalize_item(v).has_value(); }
 
-  /// @brief A whole list: every item, and the number of items.
-  bool validate_list(const std::vector<std::string> &items) const {
+  /// @brief A whole list: every item normalized, and the number of items checked; nothing when not allowed.
+  std::optional<std::vector<std::string>> normalize_list(const std::vector<std::string> &items) const {
     if (has_count && (items.size() < min_count || items.size() > max_count))
-      return false;
-    return std::all_of(items.begin(), items.end(), [this](const std::string &item) { return validate_item(item); });
+      return std::nullopt;
+    std::vector<std::string> result;
+    result.reserve(items.size());
+    for (const std::string &item : items) {
+      std::optional<std::string> n = normalize_item(item);
+      if (!n)
+        return std::nullopt;
+      result.push_back(std::move(*n));
+    }
+    return result;
   }
+  bool validate_list(const std::vector<std::string> &items) const { return normalize_list(items).has_value(); }
 };
 
 using ConfigEntries = std::vector<ConfigEntry>;

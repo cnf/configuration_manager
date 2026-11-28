@@ -1,6 +1,7 @@
 /**
  * @file config_mgr.cpp
- * @brief The pubsub front-end of the ConfigStore: the config.* topics and the RegisterConfig / GetSettings calls.
+ * @brief The pubsub front-end of the ConfigStore: the config.* topics and the RegisterConfig / GetSettings /
+ * GetConfigEntries calls.
  */
 #include "sdkconfig.h"
 
@@ -61,6 +62,21 @@ void ConfigManager::Loop() {
       _store.RegisterSettings(parts.module.c_str(), (ConfigEntries *)msg->ptr_val);
       if (msg->rtopic != NULL) {
         PS_PUB_NIL(msg->rtopic);
+      }
+      ps_unref_msg(msg);
+      continue;
+
+    } else if (ps_has_topic_suffix(msg, TOPIC_DOT "entries")) {
+      // The reply owns its copy (taken under the store's lock): nothing is shared with the caller, so a caller that
+      // timed out and returned is harmless; the unread reply is freed with its deleter.
+      if (msg->rtopic != NULL) {
+        ConfigEntries entries = _store.GetEntries(parts.module);
+        if (entries.empty()) {
+          PS_PUB_NIL(msg->rtopic);
+        } else {
+          PS_PUB_BUF(msg->rtopic, new ConfigEntries(std::move(entries)), sizeof(ConfigEntries),
+                     [](void *p) { delete static_cast<ConfigEntries *>(p); });
+        }
       }
       ps_unref_msg(msg);
       continue;
@@ -309,6 +325,43 @@ void GetSettings(std::shared_ptr<SettingsMap> &config, const char *name) {
   }
   ps_unref_msg(ret_msg);
   ps_free_subscriber(su); // one reply subscriber per call
+}
+
+bool GetConfigEntries(ConfigEntries &entries, const char *name_space) {
+  FLOG_DEBUG("Getting config entries for %s", name_space);
+  entries.clear();
+  char t_topic[kMaxTopicLength];
+  char r_topic[32] = {0};
+  ps_msg_t *ret_msg = NULL;
+
+  snprintf(t_topic, kMaxTopicLength, "%s.%s.%s", kTopicConfig, name_space, kTopicEntries);
+  snprintf(r_topic, sizeof(r_topic), "$r.config.%u", ++rt_counter);
+  ps_subscriber_t *su = ps_new_subscriber(1, PS_STRLIST(r_topic));
+
+  ps_msg_t *request = ps_new_msg(t_topic, PS_NIL_TYP);
+  ps_msg_set_rtopic(request, r_topic);
+  ps_publish(request);
+  time_t timer = esp_timer_get_time() / 1000 + 10000; // wait for 10 seconds, as GetSettings
+  while (esp_timer_get_time() / 1000 < timer) {
+    ret_msg = ps_get(su, 0);
+    if (ret_msg != NULL) {
+      break;
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+
+  bool found = false;
+  if (ret_msg != NULL && PS_IS_BUF(ret_msg)) {
+    entries = *static_cast<const ConfigEntries *>(ret_msg->buf_val.ptr);
+    found = true;
+  } else if (ret_msg != NULL) {
+    FLOG_WARN("No config entries for namespace '%s'", name_space);
+  } else {
+    FLOG_ERROR("Config entries FAILED for %s", name_space);
+  }
+  ps_unref_msg(ret_msg);
+  ps_free_subscriber(su);
+  return found;
 }
 
 #endif // CONFIG_CONFIG_MANAGER_PUBSUB

@@ -30,6 +30,10 @@ GetSettings(settings, "panel");
 int brightness = std::get<int>(settings->at("brightness"));
 ```
 
+A settings UI validates exactly like the store: `GetConfigEntries(entries, "panel")`, then per entry
+`ConfigStore::ParseValidator(entry.format).normalize_string(input)` (or `normalize_item` / `normalize_list`) — the
+value to write, or nothing when it is not allowed.
+
 Without the bus: create a `ConfigStore`, call `Setup()`, then `RegisterSettings()` / `ReadSetting()` /
 `WriteSetting()`.
 
@@ -52,6 +56,7 @@ See `config_topics.hpp`. In short:
 |------------------------------------------------|-----------------------------|---------------------------------------------|
 | `config.<ns>.register`                         | PTR `ConfigEntries*`        | register (what `RegisterConfig` sends)      |
 | `config.<ns>.get`                              | PTR `shared_ptr<SettingsMap>*` | fill in (what `GetSettings` sends)       |
+| `config.<ns>.entries` (with rtopic)            | any                         | reply: BUF `ConfigEntries` copy, or NIL (what `GetConfigEntries` sends) |
 | `[inc.]config[.<ns>[.<key>]].get`              | anything else               | publish the values as `report.config`       |
 | `[inc.]config.<ns>.<key>.set`                  | INT / DBL / BOOL / STR      | write; then `<ns>.config.get` (NIL) + report |
 | `[inc.]config.<ns>.<key>.add` / `.remove`      | STR                         | add to / remove from a list; then as set    |

@@ -287,24 +287,26 @@ size_t ConfigStore::WriteSetting(const char *name_space, const char *name, const
 
 size_t ConfigStore::WriteSetting(const char *name_space, const char *name, const std::string &value) {
   std::lock_guard<std::recursive_mutex> lock(s_mutex);
-  if (!ValidatorFor(name_space, name).validate_string(value)) {
+  const std::optional<std::string> normalized = ValidatorFor(name_space, name).normalize_string(value);
+  if (!normalized) {
     FLOG_ERROR("'%s' not allowed for %s.%s, not written", value.c_str(), name_space, name);
     return 0;
   }
   _prefs.begin(name_space);
-  size_t size = _prefs.putString(name, value);
+  size_t size = _prefs.putString(name, *normalized);
   _prefs.end();
   return size;
 }
 
 size_t ConfigStore::WriteSetting(const char *name_space, const char *name, const ConfigVector &value) {
   std::lock_guard<std::recursive_mutex> lock(s_mutex);
-  if (!ValidatorFor(name_space, name).validate_list(value)) {
+  const std::optional<ConfigVector> normalized = ValidatorFor(name_space, name).normalize_list(value);
+  if (!normalized) {
     FLOG_ERROR("List not allowed for %s.%s, not written", name_space, name);
     return 0;
   }
   std::string serial_data;
-  Serialize(value, serial_data);
+  Serialize(*normalized, serial_data);
   _prefs.begin(name_space);
   size_t size = _prefs.putString(name, serial_data);
   _prefs.end();
@@ -324,7 +326,8 @@ size_t ConfigStore::AddToSetting(const char *name_space, const char *name, const
     return 0;
   }
   const Validator rules = ParseValidator(it->format);
-  if (!rules.validate_item(value)) {
+  const std::optional<std::string> item = rules.normalize_item(value);
+  if (!item) {
     FLOG_ERROR("'%s' not allowed in %s.%s, not added", value.c_str(), name_space, name);
     return 0;
   }
@@ -332,7 +335,7 @@ size_t ConfigStore::AddToSetting(const char *name_space, const char *name, const
   std::vector<std::string> vec;
   std::string current_value = _prefs.getString(name, "");
   DeSerialize(&current_value, vec);
-  if (std::find(vec.begin(), vec.end(), value) != vec.end()) {
+  if (std::find(vec.begin(), vec.end(), *item) != vec.end()) {
     FLOG_ERROR("Value %s already exists in %s.%s, not adding again", value.c_str(), name_space, name);
     _prefs.end();
     return 0; // nothing changed, so return 0
@@ -342,7 +345,7 @@ size_t ConfigStore::AddToSetting(const char *name_space, const char *name, const
     _prefs.end();
     return 0;
   }
-  vec.push_back(value);
+  vec.push_back(*item);
   Serialize(vec, current_value);
   size_t size = _prefs.putString(name, current_value);
   _prefs.end();
@@ -365,13 +368,15 @@ size_t ConfigStore::RemoveFromSetting(const char *name_space, const char *name, 
   std::vector<std::string> vec;
   std::string current_value = _prefs.getString(name, "");
   DeSerialize(&current_value, vec);
-  auto found = std::find(vec.begin(), vec.end(), value);
+  const Validator rules = ParseValidator(it->format);
+  const std::string item = rules.normalize_item(value).value_or(value); // "Fast Heat" removes "fast_heat"
+  auto found = std::find(vec.begin(), vec.end(), item);
   if (found == vec.end()) {
     FLOG_ERROR("Value %s not in %s.%s, nothing to remove", value.c_str(), name_space, name);
     _prefs.end();
     return 0; // nothing changed, so return 0
   }
-  if (const Validator rules = ParseValidator(it->format); rules.has_count && vec.size() <= rules.min_count) {
+  if (rules.has_count && vec.size() <= rules.min_count) {
     FLOG_ERROR("%s.%s needs at least %u items, %s not removed", name_space, name, (unsigned)rules.min_count,
                value.c_str());
     _prefs.end();

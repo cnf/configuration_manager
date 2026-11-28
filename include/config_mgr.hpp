@@ -72,5 +72,10 @@ private:
 void RegisterConfig(ConfigEntries *config_entries, const char *name);
 /// @brief Fetch a module's current settings into `config` (blocks until done, up to 10 s).
 void GetSettings(std::shared_ptr<SettingsMap> &config, const char *name);
+/// @brief Copy a namespace's registered entries (key, description, format, default, unit) into `entries`, e.g. for
+/// a settings UI that validates with ConfigStore::ParseValidator(entry.format). Blocks until done, up to 10 s.
+/// @return false when the namespace is not registered (or has no entries) or the manager did not answer; `entries`
+/// is then empty.
+bool GetConfigEntries(ConfigEntries &entries, const char *name_space);
 
 #endif // CONFIG_CONFIG_MANAGER_PUBSUB

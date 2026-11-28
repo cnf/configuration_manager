@@ -31,6 +31,10 @@ static constexpr const char kTopicConfigGet[] = "config.get";
 static constexpr const char kTopicConfigSet[] = "config.set";
 static constexpr const char kTopicIncConfig[] = "inc.config";
 static constexpr const char kTopicRegister[] = "register";
+//   config.<ns>.entries         with an rtopic: the reply is a BUF holding a copy of the namespace's ConfigEntries,
+//                               or NIL when it is not registered (what GetConfigEntries sends). No verb, so it
+//                               cannot clash with a key.
+static constexpr const char kTopicEntries[] = "entries";
 static constexpr const char kTopicConfigFormat[] = "inc.config.format";
 static constexpr const char kTopicConfigSystemGet[] = "config.system.get";
 static constexpr const char kTopicIncConfigSystemGet[] = "inc.config.system.get";
