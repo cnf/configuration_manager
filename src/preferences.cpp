@@ -472,7 +472,7 @@ size_t Preferences::getString(const char *key, char *value, const size_t maxLen)
     return 0;
   }
   if (len > maxLen) {
-    FLOG_ERROR("not enough space in value: %u < %u", maxLen, len);
+    FLOG_ERROR("not enough space in value: %u < %u", (unsigned)maxLen, (unsigned)len);
     return 0;
   }
   err = nvs_get_str(_handle, key, value, &len);
@@ -523,7 +523,7 @@ size_t Preferences::getBytes(const char *key, void *buf, size_t maxLen) {
     return len;
   }
   if (len > maxLen) {
-    FLOG_ERROR("not enough space in buffer: %u < %u", maxLen, len);
+    FLOG_ERROR("not enough space in buffer: %u < %u", (unsigned)maxLen, (unsigned)len);
     return 0;
   }
   esp_err_t err = nvs_get_blob(_handle, key, buf, &len);

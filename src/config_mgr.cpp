@@ -8,6 +8,7 @@
 #if CONFIG_CONFIG_MANAGER_PUBSUB
 
 #include "config_mgr.hpp"
+#include <cinttypes>
 #include <cstdio>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
@@ -97,7 +98,7 @@ void ConfigManager::Loop() {
 
         char topic[kMaxTopicLength];
         snprintf(topic, kMaxTopicLength, "%s.%s", parts.module.c_str(), kTopicConfigSet);
-        FLOG_DEBUG("Loaded %d settings for %s", count, topic);
+        FLOG_DEBUG("Loaded %u settings for %s", (unsigned)count, topic);
         if (msg->rtopic != NULL) {
           PS_PUB_NIL(msg->rtopic);
         } else {
@@ -303,7 +304,7 @@ void GetSettings(std::shared_ptr<SettingsMap> &config, const char *name) {
   ps_msg_t *ret_msg = NULL;
 
   snprintf(t_topic, kMaxTopicLength, "%s.%s.%s", kTopicConfig, name, TOPIC_GET);
-  snprintf(r_topic, sizeof(r_topic), "$r.config.%u", ++rt_counter);
+  snprintf(r_topic, sizeof(r_topic), "$r.config.%" PRIu32, ++rt_counter);
   ps_subscriber_t *su = ps_new_subscriber(1, PS_STRLIST(r_topic));
 
   ps_msg_t *config_msg = ps_new_msg(t_topic, PS_PTR_TYP, (void *)(&config));
@@ -335,7 +336,7 @@ bool GetConfigEntries(ConfigEntries &entries, const char *name_space) {
   ps_msg_t *ret_msg = NULL;
 
   snprintf(t_topic, kMaxTopicLength, "%s.%s.%s", kTopicConfig, name_space, kTopicEntries);
-  snprintf(r_topic, sizeof(r_topic), "$r.config.%u", ++rt_counter);
+  snprintf(r_topic, sizeof(r_topic), "$r.config.%" PRIu32, ++rt_counter);
   ps_subscriber_t *su = ps_new_subscriber(1, PS_STRLIST(r_topic));
 
   ps_msg_t *request = ps_new_msg(t_topic, PS_NIL_TYP);

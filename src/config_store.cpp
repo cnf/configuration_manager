@@ -164,7 +164,7 @@ size_t ConfigStore::RegisterSettings(const char *name_space, ConfigEntries *conf
         break;
       case ConfigValueTypes::kVector:
         Serialize(std::get<std::vector<std::string>>(element.default_value), buf);
-        FLOG_DEBUG("Register %s: %s", element.key, buf);
+        FLOG_DEBUG("Register %s: %s", element.key, buf.c_str());
         written += _prefs.putString(element.key, buf);
         break;
       default:
@@ -175,7 +175,7 @@ size_t ConfigStore::RegisterSettings(const char *name_space, ConfigEntries *conf
     _entries.insert_or_assign(name_space, *config_entries);
     // _entries[nspace] = *config_entries;
   };
-  FLOG_DEBUG("Wrote %i bytes", written);
+  FLOG_DEBUG("Wrote %u bytes", (unsigned)written);
   _prefs.end();
   return written;
 }
